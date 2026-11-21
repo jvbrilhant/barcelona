@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Barcelona: mapa interativo com ruas</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+#map{position:absolute;inset:0}
+.pin{box-sizing:border-box;display:flex;align-items:center;justify-content:center;border-radius:50%;color:#fff;font-weight:700;font-size:13px;border:2.5px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.45)}
+.pin.free{background:#fff!important;border-width:4px}
+/* posição aproximada: borda tracejada escura, visível sobre qualquer cor */
+.pin.approx{border:2.5px dashed #212529}
+.pin.free.approx{border:3px dashed #2f9e44}
+.lbl{background:rgba(255,255,255,.92);border:0;box-shadow:0 0 2px rgba(0,0,0,.25);font-weight:600;font-size:12px;padding:1px 5px}
+.leaflet-tooltip-right.lbl:before{display:none}
+.legend{background:#fff;padding:8px 10px;border-radius:8px;font-size:13px;line-height:1.7;box-shadow:0 1px 5px rgba(0,0,0,.3)}
+.legend label{display:flex;align-items:center;gap:7px;cursor:pointer}
+.legend i{width:13px;height:13px;border-radius:50%;display:inline-block;box-sizing:border-box}
+.legend .dash{border:2px dashed #212529;background:transparent}
+.legend small{display:block;color:#666;font-size:11px;line-height:1.4;margin-top:4px}
+.popup b{font-size:15px}.popup p{margin:6px 0}
+.popup .preco{font-weight:600}
+.popup .aprox{color:#a61e4d;font-size:12px}
+.popup .btn{display:inline-block;background:#e03131;color:#fff!important;text-decoration:none;padding:4px 10px;border-radius:5px;font-weight:600;margin:2px 0 6px}
+@media (max-width:600px){.legend{font-size:12px;line-height:1.5;padding:6px 8px}.legend small{font-size:10px}}
+#erro{position:absolute;z-index:1000;left:50%;top:16px;transform:translateX(-50%);max-width:min(520px,calc(100% - 32px));background:#fff3bf;border:1px solid #f08c00;border-radius:8px;padding:10px 14px;font-size:14px;display:none}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="erro"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+// Os dados ficam em places.json (mesma pasta). Campos de cada lugar:
+// nome, lat, lon, tipo (paid | free | food), texto, aproximado (true/false)
+// e, para atrações pagas, precoMin (número em euros ou null) e linkIngresso (URL).
+var COL={paid:'#e03131',free:'#2f9e44',food:'#868e96'};
+var TAG={paid:'Entrada paga',free:'Grátis',food:'Comer e beber'};
+var NAME={paid:'Paga',free:'Grátis',food:'Comer e beber'};
+var ZOOM_ROTULOS=15; // a partir deste zoom os nomes ficam sempre visíveis
+
+var map=L.map('map',{zoomControl:true}).setView([41.39,2.17],13);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
+var groups={paid:L.layerGroup(),free:L.layerGroup(),food:L.layerGroup()},markers=[],pts=[];
+window.PLACES=[];
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function euro(v){return '€'+Number(v).toFixed(2).replace(/\.00$/,'').replace('.',',')}
+function erro(msg){var e=document.getElementById('erro');e.innerHTML=msg;e.style.display='block'}
+
+function popupHtml(d){
+ var q=encodeURIComponent(d.nome+' Barcelona'),h='<div class="popup"><b>'+esc(d.nome)+'</b><p>'+TAG[d.tipo]+'. '+esc(d.texto)+'</p>';
+ if(d.tipo==='paid'){
+  h+='<p class="preco">Preço mínimo: '+(d.precoMin!=null&&d.precoMin!==''?euro(d.precoMin):'não informado')+'</p>';
+  if(d.linkIngresso) h+='<a class="btn" target="_blank" rel="noopener" href="'+esc(d.linkIngresso)+'">Comprar ingresso</a><br>';
+ }
+ if(d.aproximado) h+='<p class="aprox">Posição aproximada.</p>';
+ return h+'<a target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+q+'">Google Maps</a> · <a target="_blank" rel="noopener" href="https://www.google.com/search?tbm=isch&q='+q+'">Fotos</a></div>';
+}
+
+// Rótulo fixo só com zoom alto; abaixo disso aparece ao passar o mouse ou tocar no pin.
+var rotulosFixos=null;
+function atualizarRotulos(){
+ var fixo=map.getZoom()>=ZOOM_ROTULOS;
+ if(fixo===rotulosFixos) return;
+ rotulosFixos=fixo;
+ markers.forEach(function(m){
+  m.unbindTooltip();
+  m.bindTooltip(m.options.title,{permanent:fixo,direction:'right',offset:[m._sz/2,0],className:'lbl'});
+  if(fixo&&map.hasLayer(m)) m.openTooltip();
+ });
+}
+
+function montar(P){
+ window.PLACES=P;
+ var counts={paid:0,free:0,food:0};
+ P.forEach(function(d){
+  var t=d.tipo;
+  if(!groups[t]){console.warn('Tipo desconhecido em places.json:',d);return}
+  var sz=t==='paid'?28:20;counts[t]++;
+  var ic=L.divIcon({className:'',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2],
+   html:'<div class="pin '+(t==='free'?'free ':'')+(d.aproximado?'approx':'')+'" style="width:'+sz+'px;height:'+sz+'px;background:'+COL[t]+';'+(t==='free'&&!d.aproximado?'border-color:'+COL[t]:'')+'">'+(t==='paid'?'€':'')+'</div>'});
+  var m=L.marker([d.lat,d.lon],{icon:ic,title:d.nome,zIndexOffset:t==='paid'?1000:(t==='free'?500:0)});
+  m._sz=sz;
+  m.bindPopup(popupHtml(d));
+  // Ao tocar/clicar no pin o nome fica visível enquanto o popup estiver aberto.
+  // (No celular o toque gera um "mouseout" sintético que fecharia o rótulo.)
+  var manter=function(){setTimeout(function(){if(m.isPopupOpen()) m.openTooltip()},0)};
+  m.on('popupopen',manter);
+  m.on('mouseout',manter);
+  m.on('popupclose',function(){if(!rotulosFixos) m.closeTooltip()});
+  m.addTo(groups[t]);markers.push(m);pts.push([d.lat,d.lon]);
+ });
+
+ var legend=L.control({position:'topright'});
+ legend.onAdd=function(){
+  var div=L.DomUtil.create('div','legend');
+  ['paid','free','food'].forEach(function(t){
+   var l=document.createElement('label'),c=document.createElement('input');
+   c.type='checkbox';c.checked=true;
+   c.onchange=function(){c.checked?groups[t].addTo(map):map.removeLayer(groups[t])};
+   l.appendChild(c);l.insertAdjacentHTML('beforeend','<i style="background:'+COL[t]+'"></i>'+NAME[t]+' ('+counts[t]+')');
+   div.appendChild(l);
+  });
+  div.insertAdjacentHTML('beforeend','<small><i class="dash"></i> borda tracejada = posição aproximada<br>Nomes aparecem com zoom ≥ '+ZOOM_ROTULOS+' ou ao tocar no pin</small>');
+  L.DomEvent.disableClickPropagation(div);
+  return div;
+ };
+ legend.addTo(map);
+ // O popup se desloca para não ficar escondido atrás da legenda.
+ var topo=legend.getContainer().offsetHeight+20;
+ markers.forEach(function(m){m.getPopup().options.autoPanPaddingTopLeft=L.point(10,topo)});
+ Object.keys(groups).forEach(function(t){groups[t].addTo(map)});
+ atualizarRotulos();
+ map.on('zoomend',atualizarRotulos);
+ if(pts.length) fit();
+}
+
+window.fit=function(){if(pts.length) map.fitBounds(pts,{padding:[30,30]})};
+var home=L.control({position:'topleft'});
+home.onAdd=function(){var b=L.DomUtil.create('div','leaflet-bar');b.innerHTML='<a href="#" title="Ver tudo" role="button" aria-label="Ver tudo" style="font-size:18px;text-align:center;line-height:30px">⤢</a>';b.firstChild.onclick=function(e){e.preventDefault();fit()};L.DomEvent.disableClickPropagation(b);return b};
+home.addTo(map);
+
+fetch('places.json',{cache:'no-cache'})
+ .then(function(r){if(!r.ok) throw new Error('HTTP '+r.status);return r.json()})
+ .then(montar)
+ .catch(function(e){
+  console.error(e);
+  erro(location.protocol==='file:'
+   ?'<b>Não foi possível carregar places.json.</b> O navegador bloqueia <code>fetch</code> em arquivos abertos direto do disco. Abra pelo GitHub Pages ou rode um servidor local na pasta (por exemplo <code>python3 -m http.server</code>) e acesse <code>http://localhost:8000</code>.'
+   :'<b>Não foi possível carregar places.json</b> ('+esc(e.message)+'). Verifique se o arquivo está na mesma pasta e se o JSON é válido.');
+ });
+</script>
+</body>
+</html>
