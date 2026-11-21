@@ -19,6 +19,7 @@
   {"nome": "Arc de Triomf", "lat": 41.3911, "lon": 2.1807, "tipo": "free", "texto": "Grátis.", "aproximado": false},
   {"nome": "Parc de la Ciutadella", "lat": 41.3888, "lon": 2.1869, "tipo": "free", "texto": "Grátis.", "aproximado": false},
   {"nome": "Mercat de la Boqueria", "lat": 41.3817, "lon": 2.1716, "tipo": "free", "texto": "Entrada grátis. Você paga só o que comprar.", "aproximado": false},
+  {"nome": "Mercat de l'Abaceria", "lat": 41.40218, "lon": 2.15945, "tipo": "free", "texto": "Festa de reabertura do mercado hoje (sábado, 21/11), das 10h30 às 14h30, com música ao vivo. Travessera de Gràcia, 186.", "aproximado": false},
   {"nome": "Pont del Bisbe", "lat": 41.3839, "lon": 2.1769, "tipo": "free", "texto": "Grátis.", "aproximado": false},
   {"nome": "Travessera de Gràcia", "lat": 41.4000, "lon": 2.1560, "tipo": "free", "texto": "Rua comercial. Grátis. A rua é longa: o pin marca só um trecho.", "aproximado": true},
   {"nome": "Festa Major de la Sagrera", "lat": 41.42479, "lon": 2.19018, "tipo": "free", "texto": "Grátis. Pin na Plaça de Masadas; a programação pode ocupar outros pontos do bairro.", "aproximado": false},
