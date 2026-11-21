@@ -7,9 +7,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <style>
 html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-#map{position:absolute;inset:0;background:#f4f4f2}
-/* fundo do mapa em cinza claro: menos detalhes visíveis, pins em destaque */
-.leaflet-tile-pane{filter:grayscale(1) contrast(.8) brightness(1.12)}
+#map{position:absolute;inset:0;background:#f8f4f0}
 .pin{box-sizing:border-box;display:flex;align-items:center;justify-content:center;border-radius:50%;color:#fff;font-weight:700;font-size:11px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.35)}
 /* posição aproximada: borda tracejada escura */
 .pin.approx{border:2px dashed #212529}
@@ -30,6 +28,9 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Robo
 <div id="map"></div>
 <div id="erro"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
 <script>
 // Os dados ficam em places.json (mesma pasta). Campos de cada lugar:
 // nome, lat, lon, tipo (paid | free | food), texto, aproximado (true/false)
@@ -40,7 +41,22 @@ var NAME={paid:'Paga',free:'Grátis',food:'Comer e beber'};
 var ZOOM_ROTULOS=15; // a partir deste zoom os nomes ficam sempre visíveis
 
 var map=L.map('map',{zoomControl:true}).setView([41.39,2.17],13);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
+// Fundo colorido e limpo: estilo "liberty" do OpenFreeMap (gratuito, sem chave),
+// sem ícones de lojas/metrô, placas de estrada, setas de mão única e relevo.
+// Se não carregar, cai para o OpenStreetMap padrão.
+var OCULTAR=/^(poi_|highway-shield|road_shield|road_one_way|natural_earth|airport|building-3d|boundary)/;
+var ATRIB='<a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/" target="_blank">OpenMapTiles</a> · dados &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>';
+function fundoOSM(){L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map)}
+function temWebGL(){try{var c=document.createElement('canvas');return !!(c.getContext('webgl2')||c.getContext('webgl'))}catch(e){return false}}
+if(L.maplibreGL&&window.maplibregl&&temWebGL()){
+ fetch('https://tiles.openfreemap.org/styles/liberty')
+  .then(function(r){if(!r.ok) throw new Error('HTTP '+r.status);return r.json()})
+  .then(function(st){
+   st.layers=st.layers.filter(function(l){return !OCULTAR.test(l.id)});
+   L.maplibreGL({style:st,attributionControl:{customAttribution:ATRIB}}).addTo(map);
+  })
+  .catch(function(e){console.warn('Fundo OpenFreeMap indisponível, usando OpenStreetMap',e);fundoOSM()});
+}else fundoOSM();
 var groups={paid:L.layerGroup(),free:L.layerGroup(),food:L.layerGroup()},markers=[],pts=[];
 window.PLACES=[];
 
